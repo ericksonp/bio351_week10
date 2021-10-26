@@ -1,0 +1,331 @@
+---
+title: 'Biology 351: Lab Week 10'
+output:
+  pdf_document: default
+  html_notebook: default
+---
+
+*Introduction*
+
+We are back to R to analyze and plot our allele frequency data for the last several weeks of class. Last week you generated a filtered vcf file using just your two samples; you'll use this next week to do a SNP-by-SNP FST analysis. I created the same filtered vcf file that incudes all of the samples. This week we are going to use these data to run and  a principal component analysis and do a preliminary comparison of FST across all 10 samples.
+
+To start, I have already turned the data encoded in the AD and RD spaces of the vcf into an R data table.
+
+**Question:** What do AD and RD stand for? What information do they hold?
+**Answer here:**
+
+**Question** How did I convert RD and AD into an allele frequency? Note that we are calculating frequencies of the reference allele. 
+**Answer here**
+
+We need to use some bash code to get some files off of spydur and to the rstudio server.  We will use a function called scp to do that. It will copy the named files to your current working directory on the Rstudio server (indicated by the `./` at the end of the command)
+Replace `perickso` with your netid below and run this bash code chunk.  You should see these file appear in your working folder to the right. The first line sets up some information that will allow us to use one of the R packages that we'll be using today. 
+
+```{bash}
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/sw/anaconda3/lib
+scp perickso@spydur:~/shared/ZP_all_noindel_no_repeats_filtered.recode.vcf.gz ./
+scp perickso@spydur:~/shared/ZP_processed_freqs_wide.Rdata ./
+scp perickso@spydur:~/shared/sample_info.csv ./
+
+```
+
+*Part 1: Principal Components Analysis (PCA)*
+
+First, let's load the packages and data in. The package `doMC` will allow us each to use 4 computer cores to speed up our analysis. Our data are loaded in It's already been processed into a data.table of allele frequencies for each pooled sample, but it's a big file and will take ~30 seconds to load. It will load in as an object called `freqs.wide`.
+ 
+```{r}
+library(data.table)
+library(foreach)
+library(doMC)
+registerDoMC(4)
+library(ggplot2)
+
+#read in vcf allele frequency data. Will load in as a data.table called freqs.wide
+load("ZP_processed_freqs_wide.Rdata")
+```
+
+**Question** Use the R commands you've worked iwth previously to look at the `freqs.wide` table. How many SNPs are in our dataset?
+**Answer here:**
+
+**Question:** The genome of Z. indianus is approximately 140 Mb. How often is there a SNP in our data?
+**Answer here:** 
+
+When we do our analysis we want to remove SNPs  that are closely linked. These SNPs will tend to have correlated allele frequencies and may bias our analysis. Actually calculating linkage in the pooled data is more complicated than we have time for, so we are going to use a shortcut to downsample our data without actually measuring linkage between pairs of SNPs. We will run a short program that will keep one SNP in every 2000 bp window of the genome. That way, any two SNPs in the analysis are, on average, about 2kb apart, which is far enough to remove most linked SNPs. 
+
+**Question:** If we want to have approximately 1 SNP every 2000 bases, what fraction of the SNPs will we retain? How many SNPs will that be?
+**Answer here**
+
+The code below is going to divide our data up into windows that are 2000 bp long, and then sample one SNP every 2000 bp.  It will take a while to run. After you start running it, read through it and try to understand what some of the steps are doing. Then look at the questions below and answer them while it is running.
+
+```{r}
+
+#save window size; this value could be changed to re-calculate new windows
+window<-2000 
+
+#make sure "pos" column is a numeric column not character
+freqs.wide[,pos:=as.numeric(pos)]
+#this step will index the file so that R can find things more quickly
+setkey(freqs.wide, chr, pos, marker)
+
+#start by looping through each of 5 chromosomes
+y<-foreach(i=c(1:5))%do%{
+  #print which chromosome we are working on
+  print(paste0("chrom= ", i))
+  #pull out just the snps on chromosome i
+  snp.subset<-freqs.wide[chr==i]
+  #determine maximum position in the chromosome, which will help us figure out how many windows we need
+  max<-max(snp.subset$pos)
+  #determine number of windows
+  number.windows<-round(max/window)
+  #loop through each window and identify one random SNP
+  z<-foreach(j=c(0:number.windows), .errorhandling="remove") %dopar% {
+    #determine the position of the beginning and end of the sliding window
+    window.start=window*j
+    window.end=window*(j+1)
+    #pull out only snps in the window (pos>window start and pos < window end )
+    subset_window<-snp.subset[pos>=window.start & pos<window.end]
+    #if subset_window has 0 rows, return nothing
+    if(nrow(subset_window)==0){
+      return()}
+    #pick one random snp ID from the subset
+    chosen_snp=sample(subset_window$marker, 1)
+    #return the row of the data table that contains our chosen marker 
+    return(subset_window[marker==chosen_snp])
+  }
+  #combine all the chosen rows into a data table
+  return(rbindlist(z))
+}
+#combine each chromosome into a final data table
+y<-rbindlist(y)
+```
+
+**Question** Why is the first step a for loop that iterates over integers 1 to 5?
+**Answer here**
+
+**Question:** How did the code calculate the number of windows to make?
+**Answer here**
+
+**Question** what does `j` refer to in the code? (this is a tricky question-ask me if you aren't sure)
+**Answer here**
+
+**Question** What is the name of the function that picks a random element from a set  of values?
+**Answer here**
+
+**Question** What is going to be the name of the final data table object?
+**Answer here**
+
+**Question** When the code is done running, take a look at your final data table with the downsampled SNPs. Does the number of SNPs match what you would expect? Why or why not?
+**Answer here**
+
+Now we have a set of what should be mostly unlinked SNPs to do our PCA. 
+
+First let's do a principal components analysis using our downsampled data for the entire genome. Note that while most of the PCA we have looked at in class has used genotypes of individuals at many SNPs to calculate PCA, we can also use allele frequencies at many SNPs for a similar calculation. In this case the PCA is going to measure overall variation in allele frequency at the thousands of SNPs we have isolated, rather than variation in genotypes like we have seen in class. Below, you will need to figure out which columns of our data.table need to be passed to the principal component function. 
+
+```{r}
+#first determine which columns of "y" have the allele frequency data in them and complete the numbers below (count from left to right)
+first_column=
+last_column=
+  
+#now run this code
+  #this line isolates only the allele frequency data columns based on the columns chosen above and turns it into a matrix, which is similar to a data.table but allows R to do more math with the numbers contained in it.
+  pca.matrix<-as.matrix(y[,first_column:last_column])
+#this assigns marker names to each row of the matrix
+  rownames(pca.matrix)=y$marker
+  
+```
+
+
+Now we'll do the actual principal components calculation. R has a built-in function called `prcomp` to do this.
+```{r}
+#we only want to use SNPs with no missing data. This function will remove any rows of the matrix with missing data
+  pca.matrix.complete<-na.omit(pca.matrix)
+  #calculate PCA with prcomp() function
+  pca.results<-prcomp(pca.matrix.complete, scale=T)
+  #turn PCA results into a data.table
+  pca.data<-as.data.table(pca.results$rotation)
+  #add ID columns to that table
+  pca.data[,Pool:=rownames(pca.results$rotation)]
+
+```
+**Question** Compare the values `pca.dat` object with your partner's. Are the PC1 values identical? Why or why not? (hint think about the steps that we did to prepare the data for this analysis)
+**Answer here**
+
+To make an informative plot, we need to bring in some information about each sample so we know what we are looking at and can color-code our points appropriately. Update the code below to merge the sample information into the PCA data. 
+
+```{r}
+info<-fread("sample_info.csv")
+
+#look at the columns in info. What is the name of the column that is shared in common with "pca.data"?
+#set up the command below to merge the sample and pca data
+
+pca.data<-merge(pca.data, info, by="name.of.shared.column")
+
+```
+
+Now let's make some plots of our whole-genome PCA data. First make a plot comparing the samples by collection location by completing the x, y, and color information below
+```{r}
+ggplot(pca.data)+geom_point(aes(x=   , 
+                            y=  , 
+                            color=   )) 
+```
+**Question** Write a brief legend for this figure, calling it Figure 1. Remember that you should make it clear to the reader a brief overview of what was done and what any abbreviations mean (Remember, HPO is Richmond, CM is Charlottesville, and MIA is Florida).
+**Answer here**
+
+**Question** What overall patterns do you see based on the location of the samples? 
+**Answer here**
+
+Next, copy the code above and modify to plot to color by year instead. If you just color by `Year`, R will treat it as a numerical value and color code by different shades of blue. We want it to treat year as a category, so if you use `as.factor(Year)` instead of just `Year`, it will assign visually distinct colors to each year.
+```{r}
+#copy code here and update for year
+```
+**Question** Are there any similarities or patterns in samples when comparing by year?
+
+**Answer here**
+
+Lastly, let's make a plot that highlights the two samples you'll be comparing for your analysis. We will first need to make a new column that identifies the samples you worked on. You'll use this plot in your final presentation. 
+
+```{r}
+#first make a new column called "focal_sample" that will be filled with "FALSE" values
+pca.data[, focal_sample:=FALSE]
+#now, for your two samples, change focal_sample to TRUE using an == statement before the comma
+pca.data[   , focal_sample:=TRUE] #complete this line
+pca.data[  , focal_sample:=TRUE] #complete this line
+
+#print pca.data to make sure this worked; if not ask me for help
+pca.data
+
+#now use focal_sample to color code your plot
+ggplot(pca.data)+geom_point(aes(x=  , 
+                            y=  ,
+                            color= ))
+
+```
+
+**Question** Compared to the overall variation in the samples, how similar are your two samples that you'll be comparing? Do they differ in PC1, PC2, or both?
+**Answer here**
+
+We were focusing on the whole genome, but previous research on Zaprionus has suggested that there are some interesting trends of population differentiation with individual chromosomes. Let's repeat our PCA but now we will calculate the PCA for each chromosome separately and compare. As above, we'll use a for loop that processes each chromosome separately
+
+```{r}
+pca.chrom<-foreach(chrom=c(1:5))%do%{
+  print(chrom)
+  #this line will pull out only the data for one chromosome
+  y.chrom<-y[chr==chrom,first_column:last_column]
+  pca.matrix.chrom<-as.matrix(y.chrom)
+#this assigns marker names to each row of the matrix
+  rownames(pca.matrix.chrom)=y.chrom$marker
+#only want SNPs with calls in all pops
+  pca.matrix.chrom.complete<-na.omit(pca.matrix.chrom)
+  #calculate PCA for the chromosome
+  pca.results.chrom<-prcomp(pca.matrix.chrom.complete, scale=T)
+  #turn it into a data table
+  pca.data.chrom<-as.data.table(pca.results.chrom$rotation)
+  #add names of pools
+  pca.data.chrom[,Pool:=rownames(pca.results.chrom$rotation)]
+  pca.data.chrom[,chrom:=chrom]
+  return(pca.data.chrom)
+}
+pca.chrom<-rbindlist(pca.chrom)
+
+```
+Now use the merge command that you learned above to merge your new `pca.chrom` object with the sample information
+```{r}
+#merge here
+
+```
+
+Now we'll make the same plots we made above, but plot each chromosome separately with the `facet_wrap` command in `ggplot`. To add facets you add `+ facet_wrap(~variable.to.facet.by, scales="free")` to the end of your plotting command. Use your code from above as an example to make a new plot that is color-coded by Location and faceted by chromosome so that there is a different plot for each chromosome. 
+```{r}
+#write plotting code here
+
+```
+**Question** Write a legend for this figure, calling it Figure 2. You do not need to repeat information that was already stated in the Figure 1 legend. 
+**Answer here** 
+
+**Question** How do the individual chromosome results compare to the full genome results? What could explain the differences? Do any chromosomes stand out? 
+
+**Answer here**
+
+*Part 2: Genome-wide FST between all pairs of samples*
+
+For this part we are going to use a package called poolfstat. This package is specifically designed to do FST and other population genetic tests on pooled sequencing data. 
+
+Run the code below to read our full vcf file into R with poolfstat. It needs to know the names and number of individuals in each pool, which is found in our previously-loaded "info" file. Because the order of the samples in the vcf is is different than the order in the sample file, we have to tell it to read the poolnames and poolsizes out of order. This step will take a couple minutes but will update you on its progress.
+
+```{r}
+library(poolfstat)
+vcf.dat<-vcf2pooldata(vcf.file="ZP_all_noindel_no_repeats_filtered.recode.vcf.gz",
+                  poolnames=info$sample_name[c(10,1:9)],
+                  poolsizes=info$total[c(10,1:9)],
+                  min.cov.per.pool=15)
+
+
+
+```
+One of the functions of this package can calculate pairwise FST using each sample. The function is called `compute.pairwiseFST` and it takes our imported vcf file as an input. Write the command below to do the calculation and save the output as an object called `pfst`. 
+
+**Question** What do higher FST values mean?
+**Answer here**
+
+**Question:** What do you think "pairwise' FST means? 
+**Answer here**
+
+Now write your command below and run it. It takes a couple minutes to run.
+```{r}
+pfst<-compute.pairwiseFST(vcf.dat,verbose=TRUE) #remove
+```
+Let's look at the pfst object created in our last command. It created a bunch of data, but the actual FST values are saved as something called PairwiseFSTmatrix
+
+```{r}
+pfst@PairwiseFSTmatrix
+```
+
+**Question** What is shown in these data?
+**Answer here**
+
+**Question** Why are there "NA"s along a diagonal line?
+**Answer here**
+
+The poolfstat package includes a built-in function to create a heatmap of the FST values. Heatmaps use different colors to show numerical data. 
+```{r}
+heatmap(pfst,symm=T)
+
+```
+**Question** What is missing from this plot to help you interpret it?
+**Answer here**
+
+This plot has a number of issues. Most importantly, I am not sure what is different about the colors shown above the diagonal and below the diagonal, or which ones represent the actual FST values! I have searched extensively and have not found out what it is plotting. This is not good practice for writing software.
+
+Let's make a better heatmap so that we can be certain of what we are looking at. You'll need to run the first three lines, then look at the new object you've created and update the plotting information below to actually  make the plot.
+```{r}
+#first we melt our data into a long format
+library(reshape2)
+library(viridis)
+fst.melt<-melt(pfst@PairwiseFSTmatrix)
+#look at fst.melt to see how the data are organized now
+
+```
+
+```{r}
+#now update the code to make a plot
+ggplot(fst.melt)+
+  geom_tile(aes(x=  , #what column makes the x axis?
+                y=  , #what column makes the y axis? 
+                fill=   ))+ #what column should determine the coloring? 
+  #this next line is going to rotate the angle of the letters on teh x axis
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))+
+  #this line removes x and y axis labels and labels the color scale
+  labs(x=NULL, y=NULL, fill="FST")+
+  #this line will use prettier colors!
+  scale_fill_viridis()
+```
+
+**Question** Write a figure legend for this figure, calling it figure 3. You do not need to repeat information from the first two legends, but should add new information as appropriate.
+**Answer here**
+
+**Question** How does the FST between your two samples compare to the range of values in all the comparisons? 
+**Answer here**
+
+**Final task**. Write a brief results paragraph explaining key results or trends in Figures 1-3, referring to each figure. Remember that your results paragraph should begin with an overview of the purpose of the experiment/analysis. You can also mention results from other plots that we didn't turn into figures, but you don't have to. 
+**Answer here**
+
+When you are done, please use Preview-->Knit to PDF to save this as a pdf and upload to Blackboard. Make sure the PDF includes all of your plots! 

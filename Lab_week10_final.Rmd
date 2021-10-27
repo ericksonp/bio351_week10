@@ -7,17 +7,17 @@ output:
 
 *Introduction*
 
-We are back to R to analyze and plot our allele frequency data for the last several weeks of class. Last week you generated a filtered vcf file using just your two samples; you'll use this next week to do a SNP-by-SNP FST analysis. I created the same filtered vcf file that incudes all of the samples. This week we are going to use these data to run and  a principal component analysis and do a preliminary comparison of FST across all 10 samples.
+We are back to R to analyze and plot our allele frequency data for the last several weeks of class. Last week you generated a filtered vcf file using just your two samples; you'll use this next week to do a SNP-by-SNP FST analysis. I created the same filtered vcf file that includes all of the samples. This week we are going to use these data to run and  a principal component analysis and do a preliminary comparison of FST across all 10 samples.
 
 To start, I have already turned the data encoded in the AD and RD spaces of the vcf into an R data table.
 
-**Question:** What do AD and RD stand for? What information do they hold?
+**Question:** (From last week): What do AD and RD stand for? What information do they hold?
 **Answer here:**
 
 **Question** How did I convert RD and AD into an allele frequency? Note that we are calculating frequencies of the reference allele. 
 **Answer here**
 
-We need to use some bash code to get some files off of spydur and to the rstudio server.  We will use a function called scp to do that. It will copy the named files to your current working directory on the Rstudio server (indicated by the `./` at the end of the command)
+We need to use some bash code to get some files off of `spydur` and to the Rstudio server.  We will use a Linux function called `scp` to do that. It will copy the named files to your current working directory on the Rstudio server (indicated by the `./` at the end of the command). Luckily for us, we can run Linux commands through Rstudio by changing the `{R}` to `{bash}`
 Replace `perickso` with your netid below and run this bash code chunk.  You should see these file appear in your working folder to the right. The first line sets up some information that will allow us to use one of the R packages that we'll be using today. 
 
 ```{bash}
@@ -43,10 +43,10 @@ library(ggplot2)
 load("ZP_processed_freqs_wide.Rdata")
 ```
 
-**Question** Use the R commands you've worked iwth previously to look at the `freqs.wide` table. How many SNPs are in our dataset?
+**Question** Use the R commands you've worked with previously to look at the `freqs.wide` table. How many SNPs are in our dataset?
 **Answer here:**
 
-**Question:** The genome of Z. indianus is approximately 140 Mb. How often is there a SNP in our data?
+**Question:** The genome of Z. indianus is approximately 140 Mb. How often is there a SNP in our data? Remember you can use the console below as a calculator!
 **Answer here:** 
 
 When we do our analysis we want to remove SNPs  that are closely linked. These SNPs will tend to have correlated allele frequencies and may bias our analysis. Actually calculating linkage in the pooled data is more complicated than we have time for, so we are going to use a shortcut to downsample our data without actually measuring linkage between pairs of SNPs. We will run a short program that will keep one SNP in every 2000 bp window of the genome. That way, any two SNPs in the analysis are, on average, about 2kb apart, which is far enough to remove most linked SNPs. 
@@ -98,7 +98,7 @@ y<-foreach(i=c(1:5))%do%{
 y<-rbindlist(y)
 ```
 
-**Question** Why is the first step a for loop that iterates over integers 1 to 5?
+**Question** Why is the first step a for loop that iterates over integers 1 to 5? 
 **Answer here**
 
 **Question:** How did the code calculate the number of windows to make?
@@ -146,7 +146,7 @@ Now we'll do the actual principal components calculation. R has a built-in funct
   pca.data[,Pool:=rownames(pca.results$rotation)]
 
 ```
-**Question** Compare the values `pca.dat` object with your partner's. Are the PC1 values identical? Why or why not? (hint think about the steps that we did to prepare the data for this analysis)
+**Question** Compare the values in your `pca.dat` object with your partner's. Are the PC1 values identical? Why or why not? (hint think about the steps that we did to prepare the data for this analysis)
 **Answer here**
 
 To make an informative plot, we need to bring in some information about each sample so we know what we are looking at and can color-code our points appropriately. Update the code below to merge the sample information into the PCA data. 
@@ -167,8 +167,6 @@ ggplot(pca.data)+geom_point(aes(x=   ,
                             y=  , 
                             color=   )) 
 ```
-**Question** Write a brief legend for this figure, calling it Figure 1. Remember that you should make it clear to the reader a brief overview of what was done and what any abbreviations mean (Remember, HPO is Richmond, CM is Charlottesville, and MIA is Florida).
-**Answer here**
 
 **Question** What overall patterns do you see based on the location of the samples? 
 **Answer here**
@@ -186,7 +184,7 @@ Lastly, let's make a plot that highlights the two samples you'll be comparing fo
 ```{r}
 #first make a new column called "focal_sample" that will be filled with "FALSE" values
 pca.data[, focal_sample:=FALSE]
-#now, for your two samples, change focal_sample to TRUE using an == statement before the comma
+#now, for your two samples, change the focal_sample column to TRUE using an == statement before the comma
 pca.data[   , focal_sample:=TRUE] #complete this line
 pca.data[  , focal_sample:=TRUE] #complete this line
 
@@ -227,19 +225,21 @@ pca.chrom<-foreach(chrom=c(1:5))%do%{
 pca.chrom<-rbindlist(pca.chrom)
 
 ```
+
 Now use the merge command that you learned above to merge your new `pca.chrom` object with the sample information
+
 ```{r}
 #merge here
 
 ```
 
 Now we'll make the same plots we made above, but plot each chromosome separately with the `facet_wrap` command in `ggplot`. To add facets you add `+ facet_wrap(~variable.to.facet.by, scales="free")` to the end of your plotting command. Use your code from above as an example to make a new plot that is color-coded by Location and faceted by chromosome so that there is a different plot for each chromosome. 
+
 ```{r}
 #write plotting code here
 
 ```
-**Question** Write a legend for this figure, calling it Figure 2. You do not need to repeat information that was already stated in the Figure 1 legend. 
-**Answer here** 
+
 
 **Question** How do the individual chromosome results compare to the full genome results? What could explain the differences? Do any chromosomes stand out? 
 
@@ -247,7 +247,7 @@ Now we'll make the same plots we made above, but plot each chromosome separately
 
 *Part 2: Genome-wide FST between all pairs of samples*
 
-For this part we are going to use a package called poolfstat. This package is specifically designed to do FST and other population genetic tests on pooled sequencing data. 
+For this part we are going to use a package called `poolfstat`. This package is specifically designed to do FST and other population genetic tests on pooled sequencing data. 
 
 Run the code below to read our full vcf file into R with poolfstat. It needs to know the names and number of individuals in each pool, which is found in our previously-loaded "info" file. Because the order of the samples in the vcf is is different than the order in the sample file, we have to tell it to read the poolnames and poolsizes out of order. This step will take a couple minutes but will update you on its progress.
 
@@ -273,7 +273,7 @@ Now write your command below and run it. It takes a couple minutes to run.
 ```{r}
 pfst<-compute.pairwiseFST(vcf.dat,verbose=TRUE) #remove
 ```
-Let's look at the pfst object created in our last command. It created a bunch of data, but the actual FST values are saved as something called PairwiseFSTmatrix
+Let's look at the `pfst` object created in our last command. It created a bunch of data, but the actual FST values are saved as something called `PairwiseFSTmatrix`, which will be printed with the command below
 
 ```{r}
 pfst@PairwiseFSTmatrix
@@ -293,9 +293,10 @@ heatmap(pfst,symm=T)
 **Question** What is missing from this plot to help you interpret it?
 **Answer here**
 
-This plot has a number of issues. Most importantly, I am not sure what is different about the colors shown above the diagonal and below the diagonal, or which ones represent the actual FST values! I have searched extensively and have not found out what it is plotting. This is not good practice for writing software.
+This plot has a number of issues. Most importantly, I am not sure what is different about the data shown above the diagonal and below the diagonal, or which ones represent the actual FST values! I have searched extensively and have not found out what it is plotting. This is not good practice for writing software.
 
-Let's make a better heatmap so that we can be certain of what we are looking at. You'll need to run the first three lines, then look at the new object you've created and update the plotting information below to actually  make the plot.
+Let's make a better heatmap so that we can be certain of what we are looking at. You'll need to run the first three lines, then look at the new object you've created and update the plotting information in the second chunk of code to actually  make the plot.
+
 ```{r}
 #first we melt our data into a long format
 library(reshape2)
@@ -319,13 +320,12 @@ ggplot(fst.melt)+
   scale_fill_viridis()
 ```
 
-**Question** Write a figure legend for this figure, calling it figure 3. You do not need to repeat information from the first two legends, but should add new information as appropriate.
-**Answer here**
 
 **Question** How does the FST between your two samples compare to the range of values in all the comparisons? 
 **Answer here**
 
-**Final task**. Write a brief results paragraph explaining key results or trends in Figures 1-3, referring to each figure. Remember that your results paragraph should begin with an overview of the purpose of the experiment/analysis. You can also mention results from other plots that we didn't turn into figures, but you don't have to. 
-**Answer here**
+**Final task**Choose one of the plots that you made today and write a figure legend for it. Then write a short results statement describing the results and citing the figure. Remember that your figure legend should allow the reader to understand what was done to produce the data. The results paragraph should orient the reader to purpose of the experiment/analysis and then describe key results, referring back to the figure.
+**Figure legend here**
+**Results here**
 
 When you are done, please use Preview-->Knit to PDF to save this as a pdf and upload to Blackboard. Make sure the PDF includes all of your plots! 
